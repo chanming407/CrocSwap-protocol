@@ -30,13 +30,13 @@ contract BeraCrocMultiSwap {
         require(_steps.length != 0, "No steps provided");
         SwapHelpers.SwapStep memory initStep = _steps[0];
         uint128 quantity = _amount;
-        address inputAsset;
-        initStep.isBuy ? inputAsset = initStep.base : inputAsset = initStep.quote;
+        address nextAsset;
+        initStep.isBuy ? nextAsset = initStep.base : nextAsset = initStep.quote;
         for (uint256 i=0; i < _steps.length; ) {
             SwapHelpers.SwapStep memory step = _steps[i];
             address swapAsset;
             step.isBuy ? swapAsset = step.base : swapAsset = step.quote;
-            require(inputAsset == swapAsset, "Invalid swap sequence");
+            require(nextAsset == swapAsset, "Invalid swap sequence");
             if (step.isBuy) {
                 // We use the max uint128 as the limit price to ensure the swap executes
                 // Given that we have full range liquidity, there is no min limit price
@@ -45,14 +45,14 @@ contract BeraCrocMultiSwap {
                 step.isBuy, true, quantity, 0, type(uint128).max);
                 // Received amount is always negative
                 quantity = uint128(-quoteFlow);
-                inputAsset = step.quote;
+                nextAsset = step.quote;
             } else {
                 // Limit price is 0 here for the inverse reason above
                 (int128 baseFlow,,) = crocImpact.calcImpact(step.base, step.quote, step.poolIdx,
                 step.isBuy, false, quantity, 0, 0);
                 // Received amount is always negative
                 quantity = uint128(-baseFlow);
-                inputAsset = step.base;
+                nextAsset = step.base;
             }
             unchecked { i++; }
         }
@@ -79,19 +79,19 @@ contract BeraCrocMultiSwap {
             SwapHelpers.SwapStep memory initStep = _steps[0];
             uint128 quantity = _amount;
             uint128 minOut = 0;
-            address inputAsset;
-            initStep.isBuy ? inputAsset = initStep.base : inputAsset = initStep.quote;
-            IERC20Minimal(inputAsset).transferFrom(msg.sender, address(this), uint256(quantity));
+            address nextAsset;
+            initStep.isBuy ? nextAsset = initStep.base : nextAsset = initStep.quote;
+            IERC20Minimal(nextAsset).transferFrom(msg.sender, address(this), uint256(quantity));
             for (uint256 i=0; i < _steps.length; ) {
                 SwapHelpers.SwapStep memory step = _steps[i];
                 address swapAsset;
                 step.isBuy ? swapAsset = step.base : swapAsset = step.quote;
-                require(inputAsset == swapAsset, "Invalid swap sequence");
+                require(nextAsset == swapAsset, "Invalid swap sequence");
                 // Set the minOut to the last step's minOut
                 if (i == _steps.length-1) {
                     minOut = _minOut;
                 }
-                IERC20Minimal(inputAsset).approve(address(crocSwapDex), uint256(quantity));                
+                IERC20Minimal(nextAsset).approve(address(crocSwapDex), uint256(quantity));                
                 if (step.isBuy) {
                     // We use the max uint128 as the limit price to ensure the swap executes
                     // Given that we have full range liquidity, there is no min limit price
@@ -100,23 +100,18 @@ contract BeraCrocMultiSwap {
                     step.isBuy, true, quantity, 0, type(uint128).max, minOut, 2);
                     // Received amount is always negative
                     quantity = uint128(-quoteFlow);
-                    inputAsset = step.quote;
+                    nextAsset = step.quote;
                 } else {
                     // Limit price is 0 here for the inverse reason above
                     (int128 baseFlow,) = crocSwapDex.swap(step.base, step.quote, step.poolIdx,
                     step.isBuy, false, quantity, 0, 0, minOut, 2);
                     // Received amount is always negative
                     quantity = uint128(-baseFlow);
-                    inputAsset = step.base;
+                    nextAsset = step.base;
                 }
                 unchecked { i++; }
             }
-            // Final step
-            SwapHelpers.SwapStep memory finalStep = _steps[_steps.length-1];
-            // Out asset based on isBuy
-            address outAsset;
-            outAsset = finalStep.isBuy ? finalStep.quote : finalStep.base;
-            IERC20Minimal(outAsset).transfer(msg.sender, uint256(quantity));
+            IERC20Minimal(nextAsset).transfer(msg.sender, uint256(quantity));
             return quantity;
     }
 }
